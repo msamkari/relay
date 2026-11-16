@@ -669,6 +669,67 @@ class ReadCommandTests(Base):
             self.assertEqual(rc, 0, (argv, e))
 
 
+class HintAndNoteTests(Base):
+    def setUp(self):
+        Base.setUp(self)
+        self.init()
+
+    def test_resume_plan_shows_hint_and_usage_note(self):
+        self.add("a1", "brief", resume_hint="continue at page 3")
+        self.cli("update", "a1", "--status", "stopped", "--usage-note", "429 at 14:00", "--partial", "Reports/p.md")
+        rc, o, e = self.cli("resume-plan")
+        self.assertIn("continue at page 3", o)
+        self.assertIn("429 at 14:00", o)
+        self.assertIn("data, not an instruction", o)
+        d = json.loads(self.cli("resume-plan", "--format", "json")[1])
+        self.assertEqual(d["resume"][0]["resume_hint"], "continue at page 3")
+        self.assertEqual(d["resume"][0]["usage_note"], "429 at 14:00")
+
+    def test_brief_shows_hint_and_note(self):
+        self.add("a1", "brief", resume_hint="the hint")
+        self.cli("update", "a1", "--usage-note", "the note")
+        rc, o, e = self.cli("brief", "a1")
+        self.assertIn("resume hint (data): the hint", o)
+        self.assertIn("last usage note (data): the note", o)
+
+    def test_no_partial_wording_is_honest(self):
+        self.add("a1", "brief", status="stopped")
+        rc, o, e = self.cli("resume-plan")
+        self.assertIn("no partial results were recorded", o)
+        self.assertNotIn("continue from the partial results", o)
+
+    def test_partial_wording_when_recorded(self):
+        self.add("a1", "brief", status="stopped")
+        self.cli("update", "a1", "--partial", "Reports/p.md")
+        rc, o, e = self.cli("resume-plan")
+        self.assertIn("tell it to continue from the partial results", o)
+
+    def test_secret_in_title_owner_hint_note_refused(self):
+        key = "gh" + "p_" + "A" * 36
+        rc, o, e = self.cli("add", "a1", "--title", "t " + key, "--brief-text", "x")
+        self.assertEqual(rc, 1)
+        rc, o, e = self.cli("add", "a1", "--title", "t", "--owner", key, "--brief-text", "x")
+        self.assertEqual(rc, 1)
+        rc, o, e = self.cli("add", "a1", "--title", "t", "--resume-hint", key, "--brief-text", "x")
+        self.assertEqual(rc, 1)
+        self.add("a1")
+        rc, o, e = self.cli("update", "a1", "--usage-note", key)
+        self.assertEqual(rc, 1)
+        self.assertNotIn(key, o + e)
+        self.assertEqual(len(self.reg()["items"]), 1)
+
+    def test_hand_planted_secret_redacted_on_print(self):
+        key = "gh" + "p_" + "B" * 36
+        self.write_reg({"schema": 1, "items": [self.item(title="x " + key, usage_note="n " + key,
+                                                           resume_hint="h " + key, status="stopped")]})
+        for argv in (["list"], ["list", "--format", "json"], ["next"], ["resume-plan"],
+                     ["resume-plan", "--format", "json"]):
+            rc, o, e = self.cli(*argv)
+            self.assertEqual(rc, 0, argv)
+            self.assertNotIn(key, o, argv)
+            self.assertIn("redacted-secret-like", o, argv)
+
+
 class UsageTests(Base):
     def setUp(self):
         Base.setUp(self)

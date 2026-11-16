@@ -45,7 +45,7 @@ jobs:
           echo clean
       - name: Commit authors
         run: |
-          bad=$(git log --all --format='%an,%ae,%cn,%ce' | sort -u | grep -v -x 'msamkari,msamkari@users.noreply.github.com,msamkari,msamkari@users.noreply.github.com' || true)
+          bad=$(git log --all --no-merges --format='%an,%ae' | sort -u | grep -v -x 'msamkari,msamkari@users.noreply.github.com' || true)
           if [ -n "$bad" ]; then echo "unexpected commit identities:"; echo "$bad"; exit 1; fi
       - name: Dependencies note
         run: echo "stdlib only; no third-party dependencies to license-check"

@@ -204,6 +204,15 @@ class ShapeTests(unittest.TestCase):
             s["checks"]["ci_green"] = {"argv": argv}
             relay.validate_ship(s)
 
+    def test_refused_git_check_options(self):
+        for argv in (["git", "log", "--output=x.txt"], ["git", "diff", "--ext-diff"], ["git", "show", "--textconv"],
+                     ["git", "ls-remote", "--upload-pack=evil", "origin"], ["git", "log", "-c"],
+                     ["git", "log", "--exec=evil"], ["git", "log", "--config-env=a=b"]):
+            s = base_ship()
+            s["checks"]["ci_green"] = {"argv": argv}
+            with self.assertRaises(relay.RelayError, msg=argv):
+                relay.validate_ship(s)
+
     def test_no_force_or_delete_token_shapes_exist(self):
         """Walk every allowed shape: none contains a force/delete/visibility/admin spelling."""
         for action, argv in GOOD_SHAPES:
@@ -431,6 +440,109 @@ class TrustTests(ShipBase):
     def test_programs_pinned_by_path(self):
         a = dict((l, p) for l, p, h, s in relay.resolved_programs(self.proj, base_ship()))
         self.assertTrue(a["action pr step 1"].endswith(("git", "git.exe")) or "git" in a["action pr step 1"].lower())
+
+
+class RemotePinTests(ShipBase):
+    def test_url_change_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "remote", "set-url", "origin", os.path.join(self.tmp, "somewhere-else"))
+        self.refused("changed since you trusted")
+        self.nothing_shipped()
+
+    def test_pushurl_added_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "config", "remote.origin.pushurl", os.path.join(self.tmp, "elsewhere"))
+        self.refused("changed since you trusted")
+
+    def test_insteadof_added_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "config", "url." + os.path.join(self.tmp, "elsewhere") + ".insteadOf", self.remote)
+        self.refused("changed since you trusted")
+
+    def test_credential_helper_added_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "config", "credential.helper", "store")
+        self.refused("changed since you trusted")
+
+    def test_ssh_command_added_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "config", "core.sshCommand", "ssh -i x")
+        self.refused("changed since you trusted")
+
+    def test_gpg_program_added_after_trust_refused(self):
+        self.ready("pr")
+        git(self.proj, "config", "gpg.program", "x")
+        self.refused("changed since you trusted")
+
+    def test_unrelated_config_change_is_fine(self):
+        self.ready("pr")
+        git(self.proj, "config", "user.nickname", "x")
+        self.assertEqual(self.ship()[0], 0)
+
+    def test_retrust_after_change_works(self):
+        self.ready("pr")
+        git(self.proj, "config", "remote.origin.pushurl", self.remote)
+        self.refused("changed since you trusted")
+        self.trust()
+        rc, o, e = self.approve("pr")
+        self.assertEqual(rc, 0, e)
+        self.assertEqual(self.ship()[0], 0)
+
+    def test_trust_prints_remote_settings_hiding_credentials(self):
+        git(self.proj, "remote", "set-url", "origin", "https://someuser:hunter2pass" + "@" + "example.invalid/o/r.git")
+        rc, o, e = self.cli("trust")
+        self.assertIn("remote.origin.url", o)
+        self.assertIn("[hidden]@example.invalid", o)
+        self.assertNotIn("hunter2pass", o)
+        self.assertNotIn("someuser", o)
+
+    def test_state_text_is_stable(self):
+        a = relay.git_config_state(self.proj, base_ship())
+        b = relay.git_config_state(self.proj, base_ship())
+        self.assertEqual(a, b)
+        self.assertIn("remote.origin.url", a)
+
+
+class PruneTests(ShipBase):
+    def test_old_approvals_and_claims_pruned_on_approve(self):
+        self.ready("pr")
+        old = relay.now_epoch() - 5 * 86400
+        d = os.path.join(self.home, "approvals")
+        c = os.path.join(self.home, "claims")
+        os.makedirs(c, exist_ok=True)
+        stale_nonce = "e" * 32
+        rec = {"nonce": stale_nonce, "sig": "f" * 64, "expires": int(old), "issued": int(old) - 3600, "id": "x"}
+        with open(os.path.join(d, stale_nonce + ".json"), "w") as f:
+            json.dump(rec, f)
+        with open(os.path.join(c, "f" * 40), "w") as f:
+            f.write("")
+        with open(os.path.join(c, "9" * 40), "w") as f:
+            f.write("")
+        os.utime(os.path.join(c, "9" * 40), (old, old))
+        rc, o, e = self.approve("pr")
+        self.assertEqual(rc, 0, e)
+        self.assertFalse(os.path.exists(os.path.join(d, stale_nonce + ".json")))
+        self.assertFalse(os.path.exists(os.path.join(c, "f" * 40)))
+        self.assertFalse(os.path.exists(os.path.join(c, "9" * 40)))
+        self.assertEqual(len(self.approval_files()), 2)  # both fresh approvals remain
+
+    def test_fresh_and_recently_expired_approvals_kept(self):
+        self.ready("pr")
+        now = int(relay.now_epoch())
+        d = os.path.join(self.home, "approvals")
+        recent = "d" * 32
+        with open(os.path.join(d, recent + ".json"), "w") as f:
+            json.dump({"nonce": recent, "sig": "c" * 64, "expires": now - 3600, "issued": now - 7200}, f)
+        self.approve("pr")
+        self.assertTrue(os.path.exists(os.path.join(d, recent + ".json")))
+
+    def test_prune_ignores_foreign_files(self):
+        self.ready("pr")
+        d = os.path.join(self.home, "approvals")
+        with open(os.path.join(d, "notes.txt"), "w") as f:
+            f.write("keep me")
+        self.approve("pr")
+        self.assertTrue(os.path.exists(os.path.join(d, "notes.txt")))
 
 
 class ApproveTests(ShipBase):
