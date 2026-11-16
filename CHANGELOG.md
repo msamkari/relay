@@ -1,6 +1,7 @@
 # Changelog
 
 ## 0.1.0
+- Plugin icon added (square 1024 px PNG, generated with Gemini and chosen by the author).
 
 First release.
 
