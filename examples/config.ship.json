@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "usage": { "five_hour_pct": 60, "weekly_pct": 75 },
+  "running_stale_hours": 6,
+  "ship": {
+    "repo": "OWNER/REPO",
+    "target": "main",
+    "remote": "origin",
+    "protected": ["main", "master", "develop"],
+    "commands": {
+      "pr": [
+        { "argv": ["git", "push", "-u", "origin", "{branch}"] },
+        { "argv": ["gh", "pr", "create", "--base", "main", "--head", "{branch}", "--repo", "OWNER/REPO", "--fill"] }
+      ],
+      "merge-ff": [
+        { "argv": ["git", "switch", "main"] },
+        { "argv": ["git", "merge", "--ff-only", "{branch}"] },
+        { "argv": ["git", "push", "origin", "main"] }
+      ],
+      "tag": [
+        { "argv": ["git", "tag", "-a", "{tag}", "-m", "release", "{sha}"] },
+        { "argv": ["git", "push", "origin", "{tag}"] }
+      ],
+      "release": [
+        { "argv": ["gh", "release", "create", "{tag}", "--verify-tag", "--generate-notes", "--repo", "OWNER/REPO"] }
+      ]
+    },
+    "checks": {
+      "ci_green": { "argv": ["{python}", "tools/ci_green.py", "{branch}"], "timeout": 300 },
+      "tests_green": { "argv": ["{python}", "-m", "unittest", "discover", "-s", "tests"], "timeout": 600 },
+      "author_check": {
+        "argv": ["{relay}", "verify-authors", "--base", "main", "--branch", "{branch}",
+                 "--name", "YOUR_GIT_NAME", "--email", "YOUR_GIT_EMAIL"]
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "description": "Pending-work registry for background agents and tasks. Everything needed to continue after a usage limit (HTTP 429) is saved in the project: a strict registry, the full brief of each agent, partial-report pointers and retry times. A fresh session lists what is due and re-launches from the saved briefs (a stopped subagent cannot be resumed from another session). Optional guarded ship step (pr, merge-ff, tag, release) that runs only pinned commands under a signed, expiring, commit-bound approval. Python standard library only.",
+  "license": "MIT",
+  "keywords": ["background-agents", "resume", "registry", "rate-limit", "usage-limit", "release", "approval", "workflow"],
+  "author": { "name": "Mohammad Samkari", "url": "https://github.com/msamkari" }
+}

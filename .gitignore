@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.relay.lock/
+.relay.lock.stale-*
+*.tmp

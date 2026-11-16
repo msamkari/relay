@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "usage": { "five_hour_pct": 60, "weekly_pct": 75 },
+  "running_stale_hours": 6
+}
