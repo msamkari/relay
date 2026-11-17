@@ -19,18 +19,18 @@ def base_ship():
     return {
         "repo": "owner/name", "target": "main", "remote": "origin",
         "commands": {
-            "pr": [{"argv": ["git", "push", "origin", "{branch}"]}],
+            "pr": [{"argv": ["git", "push", "--", "origin", "{push_branch}"]}],
             "merge-ff": [{"argv": ["git", "switch", "main"]},
-                         {"argv": ["git", "merge", "--ff-only", "{branch}"]},
-                         {"argv": ["git", "push", "origin", "main"]}],
-            "tag": [{"argv": ["git", "tag", "-a", "{tag}", "-m", "release", "{sha}"]},
-                    {"argv": ["git", "push", "origin", "{tag}"]}],
+                         {"argv": ["git", "merge", "--ff-only", "--", "{sha}"]},
+                         {"argv": ["git", "push", "--", "origin", "{push_target}"]}],
+            "tag": [{"argv": ["git", "tag", "-a", "-m", "release", "--", "{tag}", "{sha}"]},
+                    {"argv": ["git", "push", "--", "origin", "{push_tag}"]}],
             "release": [{"argv": ["gh", "release", "create", "{tag}", "--verify-tag", "--generate-notes"]}],
         },
         "checks": {
             "ci_green": {"argv": PYOK},
             "tests_green": {"argv": PYOK},
-            "author_check": {"argv": ["{relay}", "verify-authors", "--base", "main", "--branch", "{branch}",
+            "author_check": {"argv": ["{relay}", "verify-authors", "--base", "main", "--branch", "{sha}",
                                       "--name", NAME, "--email", EMAIL]},
         },
     }
@@ -44,21 +44,26 @@ def with_cmd(action, *steps):
 
 # ---------------------------------------------------------------- allow-list of command shapes
 BAD_SHAPES = [
-    ("pr", ["git", "push", "--force", "origin", "{branch}"]),
-    ("pr", ["git", "push", "-f", "origin", "{branch}"]),
-    ("pr", ["git", "push", "origin", "+{branch}"]),
-    ("pr", ["git", "push", "origin", "{branch}:main"]),
+    ("pr", ["git", "push", "--force", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "-f", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "origin", "+{push_branch}"]),
+    ("pr", ["git", "push", "origin", "{push_branch}:main"]),
     ("pr", ["git", "push", "origin", "main"]),
-    ("pr", ["git", "push", "origin", "{branch}", "--force-with-lease"]),
+    ("pr", ["git", "push", "origin", "{push_branch}", "--force-with-lease"]),
     ("pr", ["git", "push", "--mirror", "origin"]),
     ("pr", ["git", "push", "--delete", "origin", "{branch}"]),
     ("pr", ["git", "push", "origin", ":{branch}"]),
     ("pr", ["git", "push", "origin", "--delete", "{branch}"]),
     ("pr", ["git", "branch", "-D", "{branch}"]),
-    ("pr", ["git", "push", "upstream", "{branch}"]),
-    ("pr", ["git", "-c", "core.hooksPath=x", "push", "origin", "{branch}"]),
-    ("pr", ["git", "--git-dir=x", "push", "origin", "{branch}"]),
-    ("pr", ["git", "push", "origin", "{branch}", "extra"]),
+    ("pr", ["git", "push", "upstream", "{push_branch}"]),
+    ("pr", ["git", "-c", "core.hooksPath=x", "push", "origin", "{push_branch}"]),
+    ("pr", ["git", "--git-dir=x", "push", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "origin", "{push_branch}", "extra"]),
+    # the 0.1.0 shapes name the branch by its bare name: a tag with that name would win, so they are gone
+    ("pr", ["git", "push", "origin", "{branch}"]),
+    ("pr", ["git", "push", "-u", "origin", "{branch}"]),
+    ("pr", ["git", "push", "origin", "{push_target}"]),
+    ("pr", ["git", "push", "--", "--", "origin", "{push_branch}"]),
     ("pr", ["gh", "pr", "create", "--admin"]),
     ("pr", ["gh", "pr", "merge", "--admin"]),
     ("pr", ["gh", "pr", "merge", "--squash"]),
@@ -70,11 +75,15 @@ BAD_SHAPES = [
     ("pr", ["gh", "pr", "create", "--head", "other"]),
     ("pr", ["gh", "pr", "create", "--web"]),
     ("pr", ["gh", "pr", "create", "--title"]),
-    ("merge-ff", ["git", "merge", "{branch}"]),
-    ("merge-ff", ["git", "merge", "--no-ff", "{branch}"]),
+    ("merge-ff", ["git", "merge", "{sha}"]),
+    ("merge-ff", ["git", "merge", "--no-ff", "{sha}"]),
+    ("merge-ff", ["git", "merge", "--ff-only", "{branch}"]),
+    ("merge-ff", ["git", "merge", "--ff-only", "main"]),
+    ("merge-ff", ["git", "merge", "--ff-only", "{sha}", "{branch}"]),
     ("merge-ff", ["git", "reset", "--hard"]),
-    ("merge-ff", ["git", "push", "origin", "main", "--force"]),
-    ("merge-ff", ["git", "push", "origin", "{branch}"]),
+    ("merge-ff", ["git", "push", "origin", "main"]),
+    ("merge-ff", ["git", "push", "origin", "{push_target}", "--force"]),
+    ("merge-ff", ["git", "push", "origin", "{push_branch}"]),
     ("merge-ff", ["git", "checkout", "other"]),
     ("merge-ff", ["git", "switch", "-c", "other"]),
     ("merge-ff", ["git", "rebase", "main"]),
@@ -82,26 +91,40 @@ BAD_SHAPES = [
     ("merge-ff", ["gh", "pr", "merge", "--rebase"]),
     ("tag", ["git", "tag", "-d", "{tag}"]),
     ("tag", ["git", "tag", "-f", "{tag}"]),
-    ("tag", ["git", "tag", "{tag}", "-m", "x", "-f"]),
+    ("tag", ["git", "tag", "-a", "{tag}", "{sha}", "-m", "x", "-f"]),
     ("tag", ["git", "push", "origin", "--tags"]),
-    ("tag", ["git", "push", "--force", "origin", "{tag}"]),
+    ("tag", ["git", "push", "--force", "origin", "{push_tag}"]),
     ("tag", ["git", "push", "origin", ":{tag}"]),
+    ("tag", ["git", "push", "origin", "{tag}"]),
     ("tag", ["git", "tag", "v1.0.0"]),
-    ("tag", ["git", "tag", "-a", "{tag}", "-m", "{branch}"]),
+    ("tag", ["git", "tag", "{tag}"]),
+    ("tag", ["git", "tag", "{tag}", "{sha}"]),
+    ("tag", ["git", "tag", "-a", "{tag}", "-m", "msg"]),
+    ("tag", ["git", "tag", "-m", "msg", "{tag}", "{sha}"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "{tag}"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "{sha}", "{tag}"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "-m", "again", "{tag}", "{sha}"]),
+    ("tag", ["git", "tag", "-a", "{tag}", "{sha}", "-m"]),
+    ("tag", ["git", "tag", "-a", "{tag}", "{sha}", "-m", "{branch}"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "{tag}", "{sha}", "extra"]),
     ("release", ["gh", "release", "delete", "{tag}"]),
     ("release", ["gh", "release", "create", "{tag}", "--repo", "other/x"]),
-    ("release", ["gh", "release", "create", "v1.0.0"]),
-    ("release", ["gh", "release", "create", "{tag}", "--target", "other"]),
+    ("release", ["gh", "release", "create", "{tag}"]),
+    ("release", ["gh", "release", "create", "{tag}", "--generate-notes"]),
+    ("release", ["gh", "release", "create", "v1.0.0", "--verify-tag"]),
+    ("release", ["gh", "release", "create", "{tag}", "--verify-tag", "--target", "other"]),
+    ("release", ["gh", "release", "create", "{tag}", "--verify-tag", "--target", "main"]),
+    ("release", ["gh", "release", "create", "{tag}", "--verify-tag", "--target", "{branch}"]),
     ("release", ["gh", "release", "edit", "{tag}"]),
-    ("release", ["gh", "release", "create", "{tag}", "--latest=false"]),
-    ("release", ["git", "push", "origin", "{tag}"]),
+    ("release", ["gh", "release", "create", "{tag}", "--verify-tag", "--latest=false"]),
+    ("release", ["git", "push", "origin", "{push_tag}"]),
     ("pr", ["cmd", "/c", "git push origin {branch}"]),
     ("pr", ["bash", "-c", "git push"]),
     ("pr", ["powershell", "-c", "git push"]),
-    ("pr", ["env", "git", "push", "origin", "{branch}"]),
+    ("pr", ["env", "git", "push", "origin", "{push_branch}"]),
     ("pr", ["git.bat", "push"]),
-    ("pr", ["./git", "push", "origin", "{branch}"]),
-    ("pr", ["git.", "push", "origin", "{branch}"]),
+    ("pr", ["./git", "push", "origin", "{push_branch}"]),
+    ("pr", ["git.", "push", "origin", "{push_branch}"]),
     ("pr", ["python", "x.py"]),
     ("pr", ["npm", "publish"]),
     ("pr", ["{python}", "-c", "pass"]),
@@ -110,22 +133,26 @@ BAD_SHAPES = [
 ]
 
 GOOD_SHAPES = [
-    ("pr", ["git", "push", "origin", "{branch}"]),
-    ("pr", ["git", "push", "-u", "origin", "{branch}"]),
-    ("pr", ["git", "push", "--set-upstream", "origin", "{branch}"]),
+    ("pr", ["git", "push", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "--", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "-u", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "-u", "--", "origin", "{push_branch}"]),
+    ("pr", ["git", "push", "--set-upstream", "origin", "{push_branch}"]),
     ("pr", ["gh", "pr", "create", "--fill"]),
     ("pr", ["gh", "pr", "create", "--fill", "--draft", "--base", "main", "--head", "{branch}", "--repo", "owner/name",
             "--title", "A title", "--body", "A body"]),
     ("merge-ff", ["git", "switch", "main"]),
     ("merge-ff", ["git", "checkout", "main"]),
     ("merge-ff", ["git", "fetch", "origin"]),
-    ("merge-ff", ["git", "merge", "--ff-only", "{branch}"]),
-    ("merge-ff", ["git", "push", "origin", "main"]),
-    ("tag", ["git", "tag", "{tag}"]),
-    ("tag", ["git", "tag", "-a", "{tag}", "-m", "msg", "{sha}"]),
-    ("tag", ["git", "tag", "{tag}", "{sha}"]),
-    ("tag", ["git", "push", "origin", "{tag}"]),
-    ("release", ["gh", "release", "create", "{tag}"]),
+    ("merge-ff", ["git", "merge", "--ff-only", "{sha}"]),
+    ("merge-ff", ["git", "merge", "--ff-only", "--", "{sha}"]),
+    ("merge-ff", ["git", "push", "origin", "{push_target}"]),
+    ("merge-ff", ["git", "push", "--", "origin", "{push_target}"]),
+    ("tag", ["git", "tag", "-a", "{tag}", "{sha}", "-m", "msg"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "{tag}", "{sha}"]),
+    ("tag", ["git", "tag", "-a", "-m", "msg", "--", "{tag}", "{sha}"]),
+    ("tag", ["git", "push", "origin", "{push_tag}"]),
+    ("release", ["gh", "release", "create", "{tag}", "--verify-tag"]),
     ("release", ["gh", "release", "create", "{tag}", "--title", "t", "--notes", "n", "--draft", "--prerelease",
                  "--verify-tag", "--generate-notes", "--target", "{sha}", "--repo", "owner/name"]),
 ]
@@ -374,7 +401,7 @@ class TrustTests(ShipBase):
     def test_trust_dry_run_prints_commands_and_writes_nothing(self):
         rc, o, e = self.cli("trust")
         self.assertEqual(rc, 0, e)
-        self.assertIn("git push origin {branch}", o)
+        self.assertIn("git push -- origin {push_branch}", o)
         self.assertIn("program:", o)
         self.assertIn("NOT trusted", o)
         self.assertIn("Nothing was written", o)
@@ -457,22 +484,22 @@ class RemotePinTests(ShipBase):
     def test_insteadof_added_after_trust_refused(self):
         self.ready("pr")
         git(self.proj, "config", "url." + os.path.join(self.tmp, "elsewhere") + ".insteadOf", self.remote)
-        self.refused("changed since you trusted")
+        self.refused("insteadof")
 
     def test_credential_helper_added_after_trust_refused(self):
         self.ready("pr")
         git(self.proj, "config", "credential.helper", "store")
-        self.refused("changed since you trusted")
+        self.refused("credential.helper")
 
     def test_ssh_command_added_after_trust_refused(self):
         self.ready("pr")
         git(self.proj, "config", "core.sshCommand", "ssh -i x")
-        self.refused("changed since you trusted")
+        self.refused("core.sshcommand")
 
     def test_gpg_program_added_after_trust_refused(self):
         self.ready("pr")
         git(self.proj, "config", "gpg.program", "x")
-        self.refused("changed since you trusted")
+        self.refused("gpg.program")
 
     def test_unrelated_config_change_is_fine(self):
         self.ready("pr")
@@ -790,7 +817,7 @@ class ShipTests(ShipBase):
         with mock.patch.object(relay, "run_argv", spy):
             self.ship()
         pushes = [c[-3:] for c in calls if "push" in c]
-        self.assertEqual(pushes, [["push", "origin", "feat/x"]])
+        self.assertEqual(pushes, [["--", "origin", self.tip() + ":refs/heads/feat/x"]])
         self.assertTrue(all(c[1] == "-c" and c[2].startswith("core.hooksPath=") for c in calls if c[0] == "git"))
 
     def test_release_action_argv_with_mocked_gh(self):
@@ -987,7 +1014,7 @@ class ShipTests(ShipBase):
 
     def test_added_step_after_trust(self):
         self.ready("pr")
-        self.edit_cfg(lambda s: s["commands"]["pr"].append({"argv": ["git", "push", "-u", "origin", "{branch}"]}))
+        self.edit_cfg(lambda s: s["commands"]["pr"].append({"argv": ["git", "push", "-u", "--", "origin", "{push_branch}"]}))
         self.refused("changed since you trusted")
 
     def test_changed_check_after_trust(self):
@@ -1005,8 +1032,9 @@ class ShipTests(ShipBase):
 
     def test_script_replaced_during_run_via_trust_recheck(self):
         """A check that edits the config while it runs is caught before any action."""
-        code = ("import json;p='Relay/config.json';d=json.load(open(p));"
-                "d['ship']['commands']['pr'][0]['timeout']=5;json.dump(d,open(p,'w'))")
+        code = ("import json;p=%r;d=json.load(open(p));"
+                "d['ship']['commands']['pr'][0]['timeout']=5;json.dump(d,open(p,'w'))"
+                % self.cfg_path.replace(os.sep, "/"))
         self.edit_cfg(lambda s: s["checks"].update(tests_green={"argv": ["{python}", "-c", code]}))
         self.ready("merge-ff", "ci_green,tests_green,author_check")
         rc, o, e = self.ship()
@@ -1016,7 +1044,8 @@ class ShipTests(ShipBase):
         self.assertNotEqual(self.remote_ref("refs/heads/main"), self.tip())
 
     def test_branch_moves_during_checks(self):
-        code = "import subprocess;subprocess.run(['git','commit','-q','--allow-empty','-m','sneaky'])"
+        code = ("import subprocess;subprocess.run(['git','-C',%r,'commit','-q','--allow-empty','-m','sneaky'])"
+                % self.proj.replace(os.sep, "/"))
         self.edit_cfg(lambda s: s["checks"].update(tests_green={"argv": ["{python}", "-c", code]}))
         self.ready("merge-ff", "ci_green,tests_green,author_check")
         rc, o, e = self.ship()
@@ -1215,26 +1244,33 @@ class ShipTests(ShipBase):
         self.assertEqual(rc, 0, (o, e))
         self.assertFalse(os.path.exists(marker))
 
-    def test_hooks_path_in_repo_config_is_overridden(self):
+    def test_hooks_path_in_repo_config_is_refused(self):
         evil = os.path.join(self.proj, "evil_hooks")
         os.makedirs(evil)
         self.write_hook(os.path.join(evil, "pre-push"))
         git(self.proj, "config", "core.hooksPath", evil)
         marker = os.path.join(self.proj, "hook_ran.txt")
         git(self.proj, "push", "-q", "origin", "feat/x:refs/heads/control")
-        if not os.path.exists(marker):
-            self.skipTest("this git does not run the planted hook here")
-        os.unlink(marker)
-        self.ready("pr")
-        self.assertEqual(self.ship()[0], 0)
+        controlled = os.path.exists(marker)
+        if controlled:
+            os.unlink(marker)
+        rc, o, e = self.cli("trust", "--yes")
+        self.assertEqual(rc, 2, (o, e))
+        self.assertIn("core.hookspath", o.lower())
         self.assertFalse(os.path.exists(marker))
+        self.assertFalse(os.path.exists(os.path.join(self.home, "trust.json")))
 
     def test_git_prefix_disables_hooks_and_fsmonitor(self):
         pre = relay.git_prefix(self.proj)
         self.assertEqual(pre[0], "-c")
         self.assertTrue(pre[1].startswith("core.hooksPath="))
-        self.assertIn(self.home.replace("\\", "/"), pre[1])
-        self.assertIn("core.fsmonitor=false", pre)
+        hooks = pre[1].split("=", 1)[1]
+        self.assertTrue(os.path.isdir(hooks) and os.listdir(hooks) == [])
+        self.assertFalse(os.path.realpath(hooks).startswith(self.home))
+        self.assertFalse(os.path.realpath(hooks).startswith(os.path.realpath(self.proj)))
+        for opt in ("core.editor=:", "core.fsmonitor=false", "protocol.ext.allow=never"):
+            self.assertIn(opt, pre)
+        self.assertFalse(any(o.startswith("core.sshCommand") for o in pre))
         self.assertEqual(relay.with_git_prefix(self.proj, ["python", "x"]), ["python", "x"])
         self.assertEqual(relay.with_git_prefix(self.proj, ["git", "status"])[-1], "status")
 

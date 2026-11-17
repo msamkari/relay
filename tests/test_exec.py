@@ -248,9 +248,19 @@ class RunTests(Base):
 
     GRAND = ("import subprocess,sys\n"
              "subprocess.Popen([sys.executable,'-c','import time;time.sleep(2);open(\"marker.txt\",\"w\").write(\"x\")'])\n")
+    # handshake version: the command does not exit before the grandchild proves it is running, so the
+    # test cannot pass just because the grandchild was slow to start
+    GRAND_STARTED = ("import subprocess,sys,time,os\n"
+                     "code='import time;open(\"started.txt\",\"w\").write(\"x\");time.sleep(2);"
+                     "open(\"marker.txt\",\"w\").write(\"x\")'\n"
+                     "subprocess.Popen([sys.executable,'-c',code])\n"
+                     "end=time.time()+30\n"
+                     "while not os.path.exists('started.txt') and time.time()<end:\n"
+                     "    time.sleep(0.05)\n")
 
     def test_grandchild_killed_when_command_exits(self):
-        exists, to = self.marker_test(self.GRAND + "sys.exit(0)\n")
+        exists, to = self.marker_test(self.GRAND_STARTED + "sys.exit(0)\n", wait=4.0)
+        self.assertTrue(os.path.exists(os.path.join(self.proj, "started.txt")), "the grandchild never ran")
         self.assertFalse(exists)
 
     def test_grandchild_killed_on_timeout(self):

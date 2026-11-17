@@ -9,17 +9,17 @@
     "protected": ["main", "master", "develop"],
     "commands": {
       "pr": [
-        { "argv": ["git", "push", "-u", "origin", "{branch}"] },
+        { "argv": ["git", "push", "--", "origin", "{push_branch}"] },
         { "argv": ["gh", "pr", "create", "--base", "main", "--head", "{branch}", "--repo", "OWNER/REPO", "--fill"] }
       ],
       "merge-ff": [
         { "argv": ["git", "switch", "main"] },
-        { "argv": ["git", "merge", "--ff-only", "{branch}"] },
-        { "argv": ["git", "push", "origin", "main"] }
+        { "argv": ["git", "merge", "--ff-only", "--", "{sha}"] },
+        { "argv": ["git", "push", "--", "origin", "{push_target}"] }
       ],
       "tag": [
-        { "argv": ["git", "tag", "-a", "{tag}", "-m", "release", "{sha}"] },
-        { "argv": ["git", "push", "origin", "{tag}"] }
+        { "argv": ["git", "tag", "-a", "-m", "release", "--", "{tag}", "{sha}"] },
+        { "argv": ["git", "push", "--", "origin", "{push_tag}"] }
       ],
       "release": [
         { "argv": ["gh", "release", "create", "{tag}", "--verify-tag", "--generate-notes", "--repo", "OWNER/REPO"] }
@@ -29,7 +29,7 @@
       "ci_green": { "argv": ["{python}", "tools/ci_green.py", "{branch}"], "timeout": 300 },
       "tests_green": { "argv": ["{python}", "-m", "unittest", "discover", "-s", "tests"], "timeout": 600 },
       "author_check": {
-        "argv": ["{relay}", "verify-authors", "--base", "main", "--branch", "{branch}",
+        "argv": ["{relay}", "verify-authors", "--base", "main", "--branch", "{sha}",
                  "--name", "YOUR_GIT_NAME", "--email", "YOUR_GIT_EMAIL"]
       }
     }

@@ -3,6 +3,7 @@ import ast
 import json
 import os
 import re
+import struct
 import sys
 import unittest
 
@@ -38,7 +39,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_fields(self):
         self.assertEqual(self.m["name"], "relay")
-        self.assertEqual(self.m["version"], "0.1.0")
+        self.assertEqual(self.m["version"], "0.1.1")
         self.assertEqual(self.m["license"], "MIT")
         self.assertEqual(self.m["author"]["name"], "Mohammad Samkari")
 
@@ -47,11 +48,17 @@ class ManifestTests(unittest.TestCase):
 
     def test_version_matches_script_and_changelog(self):
         self.assertEqual(self.m["version"], relay.VERSION)
+        self.assertIn("## 0.1.1", read("CHANGELOG.md"))
         self.assertIn("## 0.1.0", read("CHANGELOG.md"))
 
     def test_official_layout(self):
         self.assertTrue(os.path.isfile(os.path.join(PLUGIN, ".claude-plugin", "plugin.json")))
-        self.assertEqual(os.listdir(os.path.join(PLUGIN, ".claude-plugin")), ["plugin.json"])
+        # only the manifest and the icon live in .claude-plugin/ (skills, commands, agents, hooks stay at the root)
+        self.assertEqual(sorted(os.listdir(os.path.join(PLUGIN, ".claude-plugin"))), ["icon.png", "plugin.json"])
+        icon = rb(os.path.join(PLUGIN, ".claude-plugin", "icon.png"))
+        self.assertEqual(icon[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = struct.unpack(">II", icon[16:24])
+        self.assertEqual(width, height, "the icon must be square")
         for d in ("skills", "scripts", "tests", "examples"):
             self.assertTrue(os.path.isdir(os.path.join(PLUGIN, d)), d)
         self.assertFalse(os.path.exists(os.path.join(PLUGIN, ".claude-plugin", "skills")))
@@ -163,9 +170,21 @@ class HygieneTests(unittest.TestCase):
             self.assertNotIn(b"\x00", raw, p)
 
 
-STDLIB = set(["argparse", "ast", "base64", "calendar", "contextlib", "copy", "datetime", "fnmatch", "hashlib", "hmac",
+    def test_gitattributes_forces_lf(self):
+        text = read(".gitattributes")
+        self.assertIn("* text=auto eol=lf", text.split("\n"))
+
+    def test_no_text_file_has_a_carriage_return(self):
+        """Every text file in the plugin folder has LF line ends only (a CRLF CHANGELOG once broke CI)."""
+        for p in tracked_text_files():
+            if p.endswith(".png"):
+                continue
+            self.assertNotIn(b"\r", rb(p), os.path.relpath(p, PLUGIN))
+
+
+STDLIB = set(["argparse", "ast", "atexit", "base64", "calendar", "contextlib", "copy", "datetime", "fnmatch", "hashlib", "hmac",
               "importlib", "io", "json", "os", "re", "shutil", "signal", "stat", "subprocess", "sys", "tempfile",
-              "threading", "time", "unicodedata", "unittest", "uuid", "ctypes", "socket", "helpers"])
+              "threading", "time", "unicodedata", "unittest", "uuid", "ctypes", "socket", "helpers", "test_ship", "struct"])
 
 
 class PortabilityTests(unittest.TestCase):

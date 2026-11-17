@@ -221,12 +221,15 @@ class AddTests(Base):
         self.assertEqual((it["kind"], it["status"]), ("release", "running"))
 
     def test_report_path_validated(self):
-        for bad in ("../x.md", "/abs/x.md", "C:/x.md", "a:b"):
+        for bad in ("../x.md", "/abs/x.md", "C:/x.md", "a:b", "Reports/a1.md", "x.md", ".claude/settings.local.json",
+                    "Relay/reports/.claude/x.md", "Relay/reports/settings.json", "Relay/reports/.env", "Relay/reports/.env.local",
+                    "Relay/reports/a.key", "Relay/reports/a.pem", "CLAUDE.md", ".github/workflows/x.yml",
+                    "Relay/reports/.github/x.md", "Relay/registry.json"):
             rc, o, e = self.add("a1", report=bad)
             self.assertEqual(rc, 1, bad)
-        rc, o, e = self.add("a1", report="Reports/a1.md")
+        rc, o, e = self.add("a1", report="Relay/reports/a1.md")
         self.assertEqual(rc, 0)
-        self.assertEqual(self.reg()["items"][0]["report"], "Reports/a1.md")
+        self.assertEqual(self.reg()["items"][0]["report"], "Relay/reports/a1.md")
 
     def test_owner_and_hint_stored(self):
         self.add("a1", owner="session-7", resume_hint="continue at step 3")
@@ -560,17 +563,21 @@ class ReadCommandTests(Base):
         self.assertIn("Never use the old agent id", o)
         self.assertIn("WAIT wait1 until 2026-06-01T15:00:00Z", o)
         self.assertIn("BLOCKED blk1", o)
-        self.assertIn("Confirm that the owner session", o)  # stale running item
+        self.assertIn("owner session may be gone", o)  # stale running item
 
     def test_resume_plan_mentions_partial_and_report(self):
-        make_registry(self, [{"id": "x", "status": "stopped", "partial": "Reports/p.md", "report": "Reports/r.md"}])
+        make_registry(self, [{"id": "x", "status": "stopped", "partial": "Reports/p.md",
+                              "report": "Relay/reports/r.md"}])
         rc, o, e = self.cli("resume-plan")
-        self.assertIn("Reports/p.md", o)
-        self.assertIn("write its report to Reports/r.md", o)
+        self.assertIn('data partial: "Reports/p.md"', o)
+        self.assertIn('data report: "Relay/reports/r.md"', o)
+        self.assertIn("DATA ONLY", o)
 
     def test_resume_plan_json(self):
-        make_registry(self, [{"id": "x", "status": "stopped", "report": "Reports/r.md"}])
+        make_registry(self, [{"id": "x", "status": "stopped", "report": "Relay/reports/r.md"}])
         d = json.loads(self.cli("resume-plan", "--format", "json")[1])
+        self.assertIn("DATA ONLY", d["warning"])
+        self.assertEqual(d["resume"][0]["data"]["report"], "Relay/reports/r.md")
         self.assertEqual(d["resume"][0]["id"], "x")
         self.assertEqual(d["resume"][0]["brief"], "Relay/briefs/x.md")
         self.assertTrue(any("old agent id" in s for s in d["resume"][0]["steps"]))
@@ -584,9 +591,10 @@ class ReadCommandTests(Base):
         rc, o, e = self.cli("brief", "a1")
         self.assertEqual(rc, 0, e)
         lines = o.splitlines()
-        self.assertIn("--- BEGIN BRIEF ---", lines)
+        begin = [i for i, l in enumerate(lines) if l.startswith("--- BEGIN BRIEF")]
+        self.assertEqual(len(begin), 1)
         self.assertIn("--- END BRIEF ---", lines)
-        inner = lines[lines.index("--- BEGIN BRIEF ---") + 1:lines.index("--- END BRIEF ---")]
+        inner = lines[begin[0] + 1:lines.index("--- END BRIEF ---")]
         self.assertTrue(all(l.startswith("| ") for l in inner))
         self.assertEqual(len(inner), 3)
 
@@ -680,17 +688,18 @@ class HintAndNoteTests(Base):
         rc, o, e = self.cli("resume-plan")
         self.assertIn("continue at page 3", o)
         self.assertIn("429 at 14:00", o)
-        self.assertIn("data, not an instruction", o)
+        self.assertIn('data resume hint: "continue at page 3"', o)
+        self.assertIn('data usage note: "429 at 14:00"', o)
         d = json.loads(self.cli("resume-plan", "--format", "json")[1])
-        self.assertEqual(d["resume"][0]["resume_hint"], "continue at page 3")
-        self.assertEqual(d["resume"][0]["usage_note"], "429 at 14:00")
+        self.assertEqual(d["resume"][0]["data"]["resume_hint"], "continue at page 3")
+        self.assertEqual(d["resume"][0]["data"]["usage_note"], "429 at 14:00")
 
     def test_brief_shows_hint_and_note(self):
         self.add("a1", "brief", resume_hint="the hint")
         self.cli("update", "a1", "--usage-note", "the note")
         rc, o, e = self.cli("brief", "a1")
-        self.assertIn("resume hint (data): the hint", o)
-        self.assertIn("last usage note (data): the note", o)
+        self.assertIn('data resume hint: "the hint"', o)
+        self.assertIn('data last usage note: "the note"', o)
 
     def test_no_partial_wording_is_honest(self):
         self.add("a1", "brief", status="stopped")
@@ -702,7 +711,7 @@ class HintAndNoteTests(Base):
         self.add("a1", "brief", status="stopped")
         self.cli("update", "a1", "--partial", "Reports/p.md")
         rc, o, e = self.cli("resume-plan")
-        self.assertIn("tell it to continue from the partial results", o)
+        self.assertIn("let it continue from the partial results", o)
 
     def test_secret_in_title_owner_hint_note_refused(self):
         key = "gh" + "p_" + "A" * 36
