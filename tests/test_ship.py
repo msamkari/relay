@@ -484,7 +484,7 @@ class RemotePinTests(ShipBase):
     def test_insteadof_added_after_trust_refused(self):
         self.ready("pr")
         git(self.proj, "config", "url." + os.path.join(self.tmp, "elsewhere") + ".insteadOf", self.remote)
-        self.refused("insteadof")
+        self.refused("rewrites where a push goes")
 
     def test_credential_helper_added_after_trust_refused(self):
         self.ready("pr")
